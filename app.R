@@ -12,6 +12,32 @@ library(DT)
 source('wordFrequencyPlotFunction.R')
 source('popularWordFunction.R')
 
+# Session timeout info----
+# For this to work there are three parts:
+# 1 the JavaScript code right here,
+# 2 a tags$script(inactivity) in the body, and 
+# 3 an observeEvent in the server
+timeoutSeconds <- 60*10
+
+inactivity <- sprintf("function idleTimer() {
+var t = setTimeout(logout, %s);
+window.onmousemove = resetTimer; // catches mouse movements
+window.onmousedown = resetTimer; // catches mouse movements
+window.onclick = resetTimer;     // catches mouse clicks
+window.onscroll = resetTimer;    // catches scrolling
+window.onkeypress = resetTimer;  //catches keyboard actions
+
+function logout() {
+Shiny.setInputValue('timeOut', '%ss')
+}
+
+function resetTimer() {
+clearTimeout(t);
+t = setTimeout(logout, %s);  // time is in milliseconds (1000 is 1 second)
+}
+}
+idleTimer();", timeoutSeconds*1000, timeoutSeconds, timeoutSeconds*1000)
+
 # Get the tokenized words ready upon loading the dashboard----
 scriptures <- lds_scriptures()
 tidy_scriptures <- scriptures %>%
@@ -28,7 +54,12 @@ tidy_scriptures <- scriptures %>%
 # Body----
 header <- dashboardHeader(title = 'Scripture Word Analysis')
 body <- dashboardBody(
-  tabsetPanel(type = 'tabs'
+  tags$script(inactivity)
+  , tags$head(
+    tags$link(rel="shortcut icon"
+              , href="favicon.ico")
+  )
+  , tabsetPanel(type = 'tabs'
     , tabPanel('Search'
                , fluidRow(
                  column(width = 3,
@@ -109,6 +140,16 @@ body <- dashboardBody(
 ui <- dashboardPage(header, dashboardSidebar(disable = T), body)
 # Server----
 server <- function(input, output, session){
+  # Timeout from session inactivity----
+  observeEvent(input$timeOut, { 
+    print(paste0("Session (", session$token, ") timed out at: ", Sys.time()))
+    showModal(modalDialog(
+      title = "Timeout",
+      paste("Session timeout due to", input$timeOut, "inactivity -", Sys.time()),
+      footer = NULL
+    ))
+    session$close()
+  })
   # Summarize button and plot
   observeEvent(input$summarizeButton, {
     popTable <<- popularWordTable(searchLevel = input$searchLevel
